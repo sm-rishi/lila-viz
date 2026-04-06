@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { formatTime, formatDay } from '../utils/format';
+import { formatTime } from '../utils/format';
 import { DAYS, DAY_LABELS } from '../utils/mapConfig';
 
 export default function MatchList({ matches, selectedId, onSelect, filterMap, filterDay }) {
@@ -14,7 +14,6 @@ export default function MatchList({ matches, selectedId, onSelect, filterMap, fi
     });
   }, [matches, filterMap, filterDay, search]);
 
-  // Group by day
   const grouped = useMemo(() => {
     const g = {};
     DAYS.forEach(d => { g[d] = []; });
@@ -24,7 +23,6 @@ export default function MatchList({ matches, selectedId, onSelect, filterMap, fi
 
   return (
     <div className="flex flex-col h-full">
-      {/* Search */}
       <div className="p-2 border-b border-gray-700">
         <input
           type="text"
@@ -39,7 +37,6 @@ export default function MatchList({ matches, selectedId, onSelect, filterMap, fi
         {filtered.length} / {matches.length} matches
       </div>
 
-      {/* Match list grouped by day */}
       <div className="flex-1 overflow-y-auto">
         {DAYS.map(day => {
           const dayMatches = grouped[day];
@@ -60,11 +57,8 @@ export default function MatchList({ matches, selectedId, onSelect, filterMap, fi
             </div>
           );
         })}
-
         {filtered.length === 0 && (
-          <div className="text-center text-gray-500 text-sm py-10">
-            No matches found
-          </div>
+          <div className="text-center text-gray-500 text-sm py-10">No matches found</div>
         )}
       </div>
     </div>
@@ -72,31 +66,58 @@ export default function MatchList({ matches, selectedId, onSelect, filterMap, fi
 }
 
 function MatchRow({ match, selected, onSelect }) {
+  const [copied, setCopied] = useState(false);
+
   const mapColor = {
     AmbroseValley: 'bg-blue-500',
     GrandRift:     'bg-amber-500',
     Lockdown:      'bg-red-500',
   }[match.map_id] || 'bg-gray-500';
 
+  const handleCopy = (e) => {
+    e.stopPropagation(); // don't also select the match
+    navigator.clipboard.writeText(match.match_id).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
   return (
-    <button
-      onClick={() => onSelect(match.match_id)}
-      className={`w-full text-left px-3 py-2 border-b border-gray-800 hover:bg-gray-800 transition-colors ${
-        selected ? 'bg-gray-700 border-l-2 border-l-blue-400' : ''
-      }`}
+    <div
+      className={`group relative border-b border-gray-800 ${
+        selected ? 'bg-gray-700 border-l-2 border-l-blue-400' : 'hover:bg-gray-800'
+      } transition-colors`}
     >
-      <div className="flex items-center gap-2 mb-0.5">
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${mapColor}`} />
-        <span className="text-xs font-mono text-gray-300 truncate">
-          {match.match_id.slice(0, 18)}…
-        </span>
-      </div>
-      <div className="flex gap-3 text-xs text-gray-500 pl-3.5">
-        <span>{match.map_id === 'AmbroseValley' ? 'Ambrose' : match.map_id}</span>
-        <span className="text-blue-400">{match.n_humans}H</span>
-        <span className="text-gray-500">{match.n_bots}B</span>
-        <span className="ml-auto">{formatTime(match.duration_s)}</span>
-      </div>
-    </button>
+      {/* Main clickable row */}
+      <button
+        onClick={() => onSelect(match.match_id)}
+        className="w-full text-left px-3 py-2 pr-8"
+      >
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${mapColor}`} />
+          <span className="text-xs font-mono text-gray-300 truncate">
+            {match.match_id.slice(0, 18)}…
+          </span>
+        </div>
+        <div className="flex gap-3 text-xs text-gray-500 pl-3.5">
+          <span>{match.map_id === 'AmbroseValley' ? 'Ambrose' : match.map_id}</span>
+          <span className="text-blue-400">{match.n_humans}H</span>
+          <span className="text-gray-500">{match.n_bots}B</span>
+          <span className="ml-auto">{formatTime(match.duration_s)}</span>
+        </div>
+      </button>
+
+      {/* Copy button — visible on row hover */}
+      <button
+        onClick={handleCopy}
+        title="Copy match ID"
+        className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-gray-600"
+      >
+        {copied
+          ? <span className="text-green-400 text-xs">✓</span>
+          : <span className="text-gray-400 text-xs">⎘</span>
+        }
+      </button>
+    </div>
   );
 }

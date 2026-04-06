@@ -24,6 +24,21 @@ export default function App() {
     [matches, selectedId]
   );
 
+  const [heatmapMatchId, setHeatmapMatchId] = useState('');
+  const [hmMatchInput,   setHmMatchInput]   = useState('');
+  const heatmapMatchInfo = useMemo(
+    () => matches.find(m => m.match_id === heatmapMatchId) || null,
+    [matches, heatmapMatchId]
+  );
+
+  const applyHeatmapMatch = (val) => {
+    const trimmed = val.trim();
+    const found = matches.find(m => m.match_id === trimmed);
+    if (found) { setHeatmapMatchId(trimmed); setHmMatchInput(trimmed); }
+    else { setHmMatchInput(trimmed); }
+  };
+  const clearHeatmapMatch = () => { setHeatmapMatchId(''); setHmMatchInput(''); };
+
   const handleSetFilterMap = v => {
     setFilterMap(v);
     if (mode === 'heatmap') setSelectedId(null);
@@ -139,6 +154,43 @@ export default function App() {
                   </button>
                 </div>
               )}
+
+              {/* Filter by match ID */}
+              <div className="mt-3 pt-3 border-t border-gray-700">
+                <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Filter by Match</div>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    placeholder="Paste match ID…"
+                    value={hmMatchInput}
+                    onChange={e => setHmMatchInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') applyHeatmapMatch(hmMatchInput); }}
+                    className="flex-1 min-w-0 bg-gray-800 text-gray-200 text-xs px-2 py-1.5 rounded border border-gray-600 focus:outline-none focus:border-blue-500 placeholder-gray-500"
+                  />
+                  <button
+                    onClick={() => applyHeatmapMatch(hmMatchInput)}
+                    className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white flex-shrink-0"
+                  >Go</button>
+                </div>
+
+                {/* Active match filter info */}
+                {heatmapMatchId && heatmapMatchInfo && (
+                  <div className="mt-2 bg-gray-800 rounded px-2 py-1.5 text-xs">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-blue-300 font-semibold">Match filter active</span>
+                      <button onClick={clearHeatmapMatch} className="text-gray-500 hover:text-red-400 text-xs">✕</button>
+                    </div>
+                    <div className="text-gray-400">{heatmapMatchInfo.map_id}</div>
+                    <div className="text-gray-500">{DAY_LABELS[heatmapMatchInfo.day]}</div>
+                    <div className="text-gray-500">{heatmapMatchInfo.n_humans}H · {heatmapMatchInfo.n_bots}B · {Math.floor(heatmapMatchInfo.duration_s/60)}m{heatmapMatchInfo.duration_s%60}s</div>
+                  </div>
+                )}
+
+                {/* Invalid ID warning */}
+                {hmMatchInput && !heatmapMatchId && hmMatchInput.trim().length > 8 && (
+                  <div className="mt-1 text-xs text-red-400">Match ID not found</div>
+                )}
+              </div>
             </div>
           )}
         </aside>
@@ -150,6 +202,7 @@ export default function App() {
             eventFilters={eventFilters}
             heatmapLayer={heatmapLayer}
             filterDay={filterDay}
+            heatmapMatchId={heatmapMatchId}
           />
         </main>
       </div>

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MINIMAP_IMAGES } from '../utils/mapConfig';
-import { useMatchData } from '../hooks/useMatchData';
-import { useHeatmap }   from '../hooks/useHeatmap';
+import { useMatchData }    from '../hooks/useMatchData';
+import { useHeatmap }      from '../hooks/useHeatmap';
+import { useMatchHeatmap } from '../hooks/useMatchHeatmap';
 import ReplayCanvas  from './ReplayCanvas';
 import HeatmapCanvas from './HeatmapCanvas';
 import Timeline from './Timeline';
@@ -9,16 +10,27 @@ import Legend   from './Legend';
 
 const CANVAS_BASE = 600;
 
-export default function MapView({ selectedMatch, mode, eventFilters, heatmapLayer, filterDay }) {
+export default function MapView({ selectedMatch, mode, eventFilters, heatmapLayer, filterDay, heatmapMatchId }) {
   const mapId   = selectedMatch?.map_id;
   const matchId = selectedMatch?.match_id;
 
   const { events, loading: evtLoading, maxT } = useMatchData(mode === 'replay' ? matchId : null);
-  const { data: heatmapData, loading: hmLoading } = useHeatmap(
-    mode === 'heatmap' ? mapId : null,
-    mode === 'heatmap' ? heatmapLayer : null,
-    mode === 'heatmap' ? filterDay : ''
+
+  // Aggregated heatmap (map+day level) — used when no match filter is active
+  const { data: aggHeatmapData, loading: aggHmLoading } = useHeatmap(
+    mode === 'heatmap' && !heatmapMatchId ? mapId : null,
+    mode === 'heatmap' && !heatmapMatchId ? heatmapLayer : null,
+    mode === 'heatmap' && !heatmapMatchId ? filterDay : ''
   );
+
+  // Per-match heatmap — computed client-side from match events when a match ID is pinned
+  const { data: matchHeatmapData, loading: matchHmLoading } = useMatchHeatmap(
+    mode === 'heatmap' && heatmapMatchId ? heatmapMatchId : null,
+    heatmapLayer
+  );
+
+  const heatmapData = heatmapMatchId ? matchHeatmapData : aggHeatmapData;
+  const hmLoading   = heatmapMatchId ? matchHmLoading   : aggHmLoading;
 
   // Minimap image
   const [mapImage, setMapImage] = useState(null);
