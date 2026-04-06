@@ -94,6 +94,47 @@ All 89,104 events fall within [0, 1] on both axes — no clipping needed. The fr
 | Filter heatmap by match | Paste/type a match ID → `useMatchHeatmap` bins that match's events client-side into the same grid format as server heatmaps |
 | Copy match ID | Hover-revealed button on each match row; `navigator.clipboard.writeText`; ✓ feedback for 1.5 s |
 
+## Design Decisions
+
+### Layout
+The app is split into a fixed 256 px sidebar and a fluid main canvas area. The sidebar serves double duty: in replay mode it lists matches; in heatmap mode it becomes a map/day/match switcher. This avoids a separate settings panel and keeps all controls one click away from the data.
+
+The canvas sits inside a `flex-1` column with a Legend strip and Timeline bar docked to the bottom. Controls that are only relevant in one mode (timeline, opacity slider, player counter) are conditionally rendered — the UI never shows controls that do nothing.
+
+### Visual Language
+
+| Element | Visual choice | Reason |
+|---------|--------------|--------|
+| Human paths | Solid colored lines, unique hue per UID | Lets the analyst track one player across the full match without ambiguity |
+| Bot paths | Dashed gray lines | Immediately distinguishable from humans; bots are context, not the focus |
+| Kill marker | Red ✕ | Universal "eliminated" symbol; red reads as danger at a glance |
+| Death marker | Orange ✕ | Same symbol family as kill but different hue — same meaning, different subject |
+| Loot marker | Yellow ◆ | Warm, positive color for a rewarding action |
+| Storm death | Purple ✕ | Distinct from combat deaths; purple is conventionally used for environmental hazards |
+| Position trail | Faded dots | Low visual weight so they don't compete with event markers |
+| Storm overlay | Semi-transparent red radial arc | Communicates both location and coverage without occluding the whole map |
+
+### Color Scheme
+Dark background (`gray-950`) was chosen so minimap images — which are dark game screenshots — blend naturally into the chrome. Bright accent colors (blue for humans, amber for bots, red for kills) stand out against the dark field without needing outlines or drop shadows.
+
+Map color coding in the match list (blue = AmbroseValley, amber = GrandRift, red = Lockdown) is carried through to the dot on each row, giving instant spatial context before a match is opened.
+
+### Information Hierarchy
+The canvas occupies the largest area because it is the primary output. Supporting information is layered by proximity:
+- **Inside the canvas**: player counter (top-right), match badge (top-left), zoom controls (bottom-left), opacity slider (bottom-right) — all overlaid at low opacity so they don't obscure events
+- **Below the canvas**: Legend (always visible) and Timeline (replay mode only)
+- **Sidebar**: filters and match selection — secondary, navigational
+
+Tooltips appear on hover only, avoiding clutter while still exposing raw event data (type, bot/human, timestamp, UID prefix) for anyone who needs it.
+
+### Heatmap Rendering
+Heatmap cells are drawn as Gaussian radial gradients rather than flat rectangles. This choice was deliberate: the underlying grid is 16 px per cell, which would produce a blocky, pixelated result at 820 px canvas size. The gradient blending smooths cell boundaries into a continuous density surface that reads as a natural heat field, not a histogram.
+
+The color ramp goes black → purple → red → orange → yellow (viridis-adjacent), which is perceptually ordered and readable by people with red-green color blindness.
+
+### Storm Visualization
+Storm direction is inferred per-match from the centroid of `KilledByStorm` positions: if most deaths are on the east side, the storm is coming from the east. The storm arc starts at 85% of match duration (validated from data: all 39 storm deaths occur in the final 15% of their respective matches) and grows to cover 70% of the map radius by match end. This matches the observed data rather than using a fixed game-rule assumption.
+
 ## Major Tradeoffs
 
 | Decision | Chose | Over | Tradeoff |
