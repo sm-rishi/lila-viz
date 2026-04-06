@@ -1,39 +1,53 @@
 import { useState, useMemo } from 'react';
 import { useIndex } from './hooks/useIndex';
 import { DEFAULT_FILTERS } from './utils/eventConfig';
-import Filters  from './components/Filters';
-import MatchList from './components/MatchList';
-import MapView  from './components/MapView';
+import { DAY_LABELS } from './utils/mapConfig';
+import Filters   from './components/Filters';
+import MatchList  from './components/MatchList';
+import MapView   from './components/MapView';
 import './index.css';
+
+const MAP_LABELS = { AmbroseValley: 'Ambrose Valley', GrandRift: 'Grand Rift', Lockdown: 'Lockdown' };
 
 export default function App() {
   const { matches, loading, error } = useIndex();
 
-  // Filter state
   const [filterMap, setFilterMap] = useState('');
   const [filterDay, setFilterDay] = useState('');
   const [mode,      setMode]      = useState('replay');
   const [heatmapLayer, setHeatmapLayer] = useState('kills');
   const [eventFilters, setEventFilters] = useState(DEFAULT_FILTERS);
 
-  // Selected match
   const [selectedId, setSelectedId] = useState(null);
   const selectedMatch = useMemo(
     () => matches.find(m => m.match_id === selectedId) || null,
     [matches, selectedId]
   );
 
-  // When map filter changes in heatmap mode, clear selected match
   const handleSetFilterMap = v => {
     setFilterMap(v);
     if (mode === 'heatmap') setSelectedId(null);
   };
 
-  // Pick the map for heatmap: either from filter or from selected match
   const heatmapMapId = filterMap || selectedMatch?.map_id || 'AmbroseValley';
   const heatmapMatch = mode === 'heatmap'
     ? { map_id: heatmapMapId, match_id: null, day: filterDay, n_humans: '—', n_bots: '—', duration_s: 0 }
     : null;
+
+  // Counts for heatmap sidebar — respects both map and day filters
+  const heatmapMatchCount = useMemo(() => {
+    return matches.filter(m =>
+      m.map_id === heatmapMapId &&
+      (!filterDay || m.day === filterDay)
+    ).length;
+  }, [matches, heatmapMapId, filterDay]);
+
+  const mapCountsForDay = useMemo(() => {
+    return ['AmbroseValley', 'GrandRift', 'Lockdown'].map(m => ({
+      map_id: m,
+      count: matches.filter(x => x.map_id === m && (!filterDay || x.day === filterDay)).length,
+    }));
+  }, [matches, filterDay]);
 
   if (error) {
     return (
@@ -45,7 +59,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-200 overflow-hidden">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 py-2.5 bg-gray-900 border-b border-gray-700 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -57,19 +70,16 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left sidebar */}
         <aside className="w-64 flex-shrink-0 flex flex-col bg-gray-900 border-r border-gray-700 overflow-hidden">
           <Filters
-            filterMap={filterMap}      setFilterMap={handleSetFilterMap}
-            filterDay={filterDay}      setFilterDay={setFilterDay}
-            mode={mode}               setMode={m => { setMode(m); setSelectedId(null); }}
+            filterMap={filterMap}       setFilterMap={handleSetFilterMap}
+            filterDay={filterDay}       setFilterDay={setFilterDay}
+            mode={mode}                setMode={m => { setMode(m); setSelectedId(null); }}
             eventFilters={eventFilters} setEventFilters={setEventFilters}
             heatmapLayer={heatmapLayer} setHeatmapLayer={setHeatmapLayer}
           />
 
-          {/* Match list (only shown in replay mode) */}
           {mode === 'replay' && (
             <div className="flex-1 overflow-hidden">
               {loading ? (
@@ -86,38 +96,60 @@ export default function App() {
             </div>
           )}
 
-          {/* In heatmap mode, show which map is displayed */}
           {mode === 'heatmap' && (
-            <div className="flex-1 p-3">
-              <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Viewing Map</div>
-              <div className="text-sm text-blue-300 font-medium">{heatmapMapId}</div>
-              <div className="text-xs text-gray-500 mt-1">
-                Showing aggregated data across all {matches.filter(m => m.map_id === heatmapMapId).length} matches
+            <div className="flex-1 p-3 overflow-y-auto">
+              {/* Current view context */}
+              <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Viewing</div>
+              <div className="text-sm text-blue-300 font-medium">{MAP_LABELS[heatmapMapId]}</div>
+              <div className="flex items-center gap-1.5 mt-1 mb-3">
+                <span className="text-xs text-gray-400 font-semibold tabular-nums">{heatmapMatchCount}</span>
+                <span className="text-xs text-gray-500">
+                  {filterDay ? `matches on ${DAY_LABELS[filterDay]}` : 'matches (all days)'}
+                </span>
               </div>
 
-              <div className="mt-4 text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Quick Stats</div>
-              {['AmbroseValley','GrandRift','Lockdown'].map(m => (
+              {/* Map switcher — shows per-day counts */}
+              <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Switch Map</div>
+              {mapCountsForDay.map(({ map_id, count }) => (
                 <button
-                  key={m}
-                  onClick={() => setFilterMap(m)}
-                  className={`w-full text-left px-2 py-1.5 rounded text-xs mb-1 transition-colors ${
-                    heatmapMapId === m ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'
+                  key={map_id}
+                  onClick={() => setFilterMap(map_id)}
+                  className={`w-full text-left px-2 py-2 rounded text-xs mb-1 transition-colors flex justify-between items-center ${
+                    heatmapMapId === map_id
+                      ? 'bg-gray-700 text-white'
+                      : 'text-gray-400 hover:bg-gray-800'
                   }`}
                 >
-                  {m === 'AmbroseValley' ? 'Ambrose Valley' : m} — {matches.filter(x => x.map_id === m).length} matches
+                  <span>{MAP_LABELS[map_id]}</span>
+                  <span className={`tabular-nums font-semibold ${heatmapMapId === map_id ? 'text-blue-400' : 'text-gray-500'}`}>
+                    {count}
+                  </span>
                 </button>
               ))}
+
+              {/* Date context note */}
+              {filterDay && (
+                <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-500">
+                  Filtered to <span className="text-gray-300">{DAY_LABELS[filterDay]}</span>.
+                  <button
+                    onClick={() => setFilterDay('')}
+                    className="ml-1 text-blue-400 hover:text-blue-300 underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </aside>
 
-        {/* Main canvas panel */}
         <main className="flex-1 overflow-hidden">
           <MapView
             selectedMatch={mode === 'heatmap' ? heatmapMatch : selectedMatch}
             mode={mode}
             eventFilters={eventFilters}
             heatmapLayer={heatmapLayer}
+            filterDay={filterDay}
           />
         </main>
       </div>

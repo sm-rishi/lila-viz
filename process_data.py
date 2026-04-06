@@ -199,42 +199,59 @@ def build_match_files(full: pd.DataFrame, out_dir: str):
     print(f"  Wrote {written} match files to {out_dir}/")
 
 
+def _write_heatmap(events_df, map_id: str, group_name: str, out_dir: str, fname: str, day: str = "all"):
+    """Bin and write a single heatmap JSON file."""
+    if events_df.empty:
+        return False
+    grid: dict[str, int] = defaultdict(int)
+    for _, row in events_df.iterrows():
+        px, py = world_to_pixel(float(row["x"]), float(row["z"]), map_id)
+        grid[bin_to_heatmap(px, py)] += 1
+
+    max_val = max(grid.values()) if grid else 1
+    payload = {
+        "map_id": map_id,
+        "group": group_name,
+        "day": day,
+        "cell_size": HEATMAP_CELL_SIZE,
+        "image_size": IMAGE_SIZE,
+        "max_val": max_val,
+        "total_events": int(len(events_df)),
+        "cells": dict(grid),
+    }
+    with open(os.path.join(out_dir, fname), "w") as f:
+        json.dump(payload, f, separators=(",", ":"))
+    return True
+
+
 def build_heatmaps(full: pd.DataFrame, out_dir: str):
-    """Write pre-binned heatmap JSON files per map per event group."""
+    """Write pre-binned heatmap JSON files per map per event group.
+
+    Generates two sets:
+      {map}_{group}.json           — all days combined (for "no date filter" view)
+      {map}_{day}_{group}.json     — per-day slice (for filtered view)
+    """
     os.makedirs(out_dir, exist_ok=True)
 
+    days = sorted(full["day"].unique())
     written = 0
+
     for map_id in MAP_CONFIG:
         sub = full[full["map_id"] == map_id]
 
         for group_name, event_types in HEATMAP_GROUPS.items():
-            events = sub[sub["event"].isin(event_types)]
-            if events.empty:
-                continue
+            # All-days aggregate (existing behaviour)
+            all_events = sub[sub["event"].isin(event_types)]
+            if _write_heatmap(all_events, map_id, group_name, out_dir,
+                              f"{map_id}_{group_name}.json", day="all"):
+                written += 1
 
-            grid: dict[str, int] = defaultdict(int)
-            for _, row in events.iterrows():
-                px, py = world_to_pixel(float(row["x"]), float(row["z"]), map_id)
-                cell = bin_to_heatmap(px, py)
-                grid[cell] += 1
-
-            # Also compute max value for normalization hint
-            max_val = max(grid.values()) if grid else 1
-            payload = {
-                "map_id": map_id,
-                "group": group_name,
-                "cell_size": HEATMAP_CELL_SIZE,
-                "image_size": IMAGE_SIZE,
-                "max_val": max_val,
-                "total_events": int(len(events)),
-                "cells": dict(grid),
-            }
-
-            fname = f"{map_id}_{group_name}.json"
-            out_path = os.path.join(out_dir, fname)
-            with open(out_path, "w") as f:
-                json.dump(payload, f, separators=(",", ":"))
-            written += 1
+            # Per-day slices
+            for day in days:
+                day_events = sub[(sub["day"] == day) & sub["event"].isin(event_types)]
+                fname = f"{map_id}_{day}_{group_name}.json"
+                if _write_heatmap(day_events, map_id, group_name, out_dir, fname, day=day):
+                    written += 1
 
     print(f"  Wrote {written} heatmap files to {out_dir}/")
 

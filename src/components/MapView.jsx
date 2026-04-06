@@ -9,14 +9,15 @@ import Legend   from './Legend';
 
 const CANVAS_BASE = 600;
 
-export default function MapView({ selectedMatch, mode, eventFilters, heatmapLayer }) {
+export default function MapView({ selectedMatch, mode, eventFilters, heatmapLayer, filterDay }) {
   const mapId   = selectedMatch?.map_id;
   const matchId = selectedMatch?.match_id;
 
   const { events, loading: evtLoading, maxT } = useMatchData(mode === 'replay' ? matchId : null);
   const { data: heatmapData, loading: hmLoading } = useHeatmap(
     mode === 'heatmap' ? mapId : null,
-    mode === 'heatmap' ? heatmapLayer : null
+    mode === 'heatmap' ? heatmapLayer : null,
+    mode === 'heatmap' ? filterDay : ''
   );
 
   // Minimap image
