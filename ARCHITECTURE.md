@@ -31,17 +31,20 @@
           ├── public/data/matches/{id}.json   (avg 10 KB, max 89 KB)
           │   Per-match event list: uid, bot flag, px, py, t (relative seconds), event type
           │
-          └── public/data/heatmaps/{map}_{type}.json   (4–20 KB each, 15 files total)
-                Pre-binned 64×64 grid: cell → event count, plus max_val for normalization
+          └── public/data/heatmaps/
+                ├── {map}_{type}.json            (all-time aggregate, 15 files)
+                └── {map}_{day}_{type}.json      (per-day slice, 74 files)
+                89 files total — pre-binned 16×16px grid: cell → event count + max_val
 
 Browser (React SPA on Vercel CDN)
   ├── Loads index.json once on startup
   ├── Fetches one match file when user selects a match (~10 KB per request)
-  ├── Fetches one heatmap file when switching heatmap layers (~5 KB per request)
-  └── Canvas draws paths, markers, and gaussian blobs — zero server calls during playback
+  ├── Fetches one heatmap file when layer or day filter changes (~5 KB per request)
+  ├── OR computes heatmap client-side from a match JSON when filtered by match ID
+  └── Canvas draws paths, markers, gaussian blobs, and storm overlay — zero server calls during playback
 ```
 
-Nothing is computed at runtime in the browser beyond scaling pixel coordinates to the canvas size. All coordinate math, timestamp normalization, and event decoding happened at preprocessing time.
+The browser does one piece of runtime computation: when the user filters the heatmap by a specific match ID, the `useMatchHeatmap` hook bins the already-loaded match events into a heatmap grid client-side (no extra network request). All other coordinate math, timestamp normalization, and event decoding happened at preprocessing time.
 
 ## Coordinate Mapping — The Tricky Part
 
@@ -78,13 +81,29 @@ All 89,104 events fall within [0, 1] on both axes — no clipping needed. The fr
 
 **Human-on-human kills are nearly absent.** Only 3 `Kill` events exist across 796 matches. These are rendered correctly but produce minimal heatmap signal — by design, not a bug.
 
+## UI Features
+
+| Feature | Implementation |
+|---------|---------------|
+| Replay playback | `requestAnimationFrame` loop; `speed` multiplier (0.5×–4×); seek via timeline scrubber |
+| Zoom / Pan | CSS `scale(zoom) translate(panX, panY)` on inner div; wheel zoom (1×–5×); drag-to-pan when zoomed; +/− buttons |
+| Player alive counter | `useMemo` over events up to `currentT`; tracks dead UIDs from Killed/BotKilled/KilledByStorm; counts BotKill events for bot deaths |
+| Storm overlay | Starts at 85% of match duration; direction inferred from KilledByStorm positions per match; drawn as radial gradient arc on canvas |
+| Hover tooltip | Screen → canvas coord transform accounts for zoom + pan; nearest event within 16/zoom px |
+| Heatmap date filter | Fetches `{map}_{day}_{layer}.json`; switching day triggers a new fetch; "all days" fetches `{map}_{layer}.json` |
+| Filter heatmap by match | Paste/type a match ID → `useMatchHeatmap` bins that match's events client-side into the same grid format as server heatmaps |
+| Copy match ID | Hover-revealed button on each match row; `navigator.clipboard.writeText`; ✓ feedback for 1.5 s |
+
 ## Major Tradeoffs
 
 | Decision | Chose | Over | Tradeoff |
 |----------|-------|------|----------|
 | Static preprocessing | Pre-computed JSON committed to repo | Live FastAPI backend reading parquet | Loses real-time data updates; gains zero hosting cost, no server cold starts, works offline |
 | Per-match lazy loading | Fetch one match on demand | Bundle all matches into one file | 10 KB per fetch vs 7.9 MB upfront; tiny latency per selection, fast initial load |
+| Per-day heatmap files | 89 separate JSON files fetched on demand | One large file with all days embedded | Each file is ~5 KB; filtering by day costs one fetch, not a large parse |
+| Client-side match heatmap | Bin already-loaded match events in browser | Pre-generate 796×5 = 3,980 extra JSON files | Saves ~40 MB of static assets; binning 1,200 events is instant in JS |
 | Canvas over SVG | `<canvas>` for all drawing | SVG elements per event | SVG DOM degrades past ~500 nodes; Canvas handles 1,200 events at 60fps smoothly |
+| CSS zoom transform | `scale()` + `translate()` on a wrapper div | Re-rendering canvas at higher resolution | Zero re-render cost; zoom is instantaneous; canvas pixel coords stay stable |
 | Gaussian blobs over grid squares | Radial gradient per cell | Filled rect per bin | Visually smooth heatmap at the cost of slightly more canvas fill operations; imperceptible at 64×64 grid |
 | No charting library | Custom canvas drawing | deck.gl / heatmap.js | Saves ~400 KB of dependencies; full control over visual style |
 | Pixel coords pre-computed | Python bakes `px`, `py` into JSON | Browser computes from world coords | JSON is ~15% larger but frontend has zero coordinate math |
