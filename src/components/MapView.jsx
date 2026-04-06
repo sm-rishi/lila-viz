@@ -8,7 +8,7 @@ import HeatmapCanvas from './HeatmapCanvas';
 import Timeline from './Timeline';
 import Legend   from './Legend';
 
-const CANVAS_BASE = 600;
+const CANVAS_BASE = 820;
 
 export default function MapView({ selectedMatch, mode, eventFilters, heatmapLayer, filterDay, heatmapMatchId }) {
   const mapId   = selectedMatch?.map_id;
@@ -179,7 +179,7 @@ export default function MapView({ selectedMatch, mode, eventFilters, heatmapLaye
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 flex items-center justify-center bg-gray-950 overflow-hidden relative">
+      <div className="flex-1 flex items-center justify-center bg-gray-950 overflow-auto relative">
 
         {!mapId && (
           <div className="text-center text-gray-500">
