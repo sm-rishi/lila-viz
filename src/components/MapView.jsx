@@ -10,14 +10,31 @@ import Timeline from './Timeline';
 import Legend   from './Legend';
 import POIOverlay, { POIMetricsPanel } from './POIOverlay';
 
-const CANVAS_BASE  = 820;
-const COMPARE_SIZE = Math.floor((CANVAS_BASE - 20) / 2);
+const MIN_CANVAS = 320;
 
 export default function MapView({
   selectedMatch, mode, eventFilters, heatmapLayer, filterDay, heatmapMatchId,
 }) {
   const mapId   = selectedMatch?.map_id;
   const matchId = selectedMatch?.match_id;
+
+  // ── Dynamic canvas size — fills available container ────────────────────────
+  const areaRef    = useRef(null);
+  const [canvasSize, setCanvasSize] = useState(600);
+
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      // Square canvas; leave 32px breathing room on each axis
+      setCanvasSize(Math.max(MIN_CANVAS, Math.floor(Math.min(width - 32, height - 32))));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const compareSize = Math.floor((canvasSize - 20) / 2);
 
   // ── Data hooks ─────────────────────────────────────────────────────────────
   const { events, loading: evtLoading, maxT } = useMatchData(mode === 'replay' ? matchId : null);
@@ -135,7 +152,7 @@ export default function MapView({
 
   const screenToCanvas = useCallback((clientX, clientY) => {
     const rect = outerRef.current.getBoundingClientRect();
-    const half = CANVAS_BASE / 2;
+    const half = canvasSize / 2;
     const sx   = clientX - rect.left;
     const sy   = clientY - rect.top;
     return {
@@ -143,7 +160,7 @@ export default function MapView({
       cx: (sx - half) / zoom - pan.x + half,
       cy: (sy - half) / zoom - pan.y + half,
     };
-  }, [zoom, pan]);
+  }, [zoom, pan, canvasSize]);
 
   const handleMouseDown = useCallback((e) => {
     if (poiTool) {
@@ -203,7 +220,7 @@ export default function MapView({
     }
 
     if (mode === 'heatmap' && showGrid) {
-      const CELL_PX = CANVAS_BASE * 16 / 1024;
+      const CELL_PX = canvasSize * 16 / 1024;
       const bx = Math.floor(cx / CELL_PX);
       const by = Math.floor(cy / CELL_PX);
       if (bx >= 0 && bx < 64 && by >= 0 && by < 64) {
@@ -218,7 +235,7 @@ export default function MapView({
     }
 
     if (mode === 'replay' && events.length) {
-      const ratio     = CANVAS_BASE / 1024;
+      const ratio     = canvasSize / 1024;
       const threshold = 16 / zoom;
       let nearest = null, nearestDist = threshold;
       events
@@ -261,7 +278,7 @@ export default function MapView({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 flex items-center justify-center bg-gray-950 overflow-auto relative">
+      <div ref={areaRef} className="flex-1 flex items-center justify-center bg-gray-950 overflow-hidden relative">
 
         {!mapId && (
           <div className="text-center text-gray-500">
@@ -307,7 +324,7 @@ export default function MapView({
                 <div className="text-xs text-center text-gray-400 mb-1 font-semibold">
                   A — {compareLeftDay ? DAY_LABELS[compareLeftDay] : 'All Dates'}
                 </div>
-                <HeatmapCanvas heatmapData={leftData} mapImage={mapImage} canvasSize={COMPARE_SIZE}
+                <HeatmapCanvas heatmapData={leftData} mapImage={mapImage} canvasSize={compareSize}
                   layerKey={heatmapLayer} opacity={hmOpacity} />
               </div>
               <div className="flex items-center justify-center w-5">
@@ -319,7 +336,7 @@ export default function MapView({
                   {compareDiff && <span className="ml-1 text-blue-400">(diff)</span>}
                 </div>
                 <HeatmapCanvas heatmapData={rightData} diffData={compareDiff ? diffData : null}
-                  mapImage={mapImage} canvasSize={COMPARE_SIZE} layerKey={heatmapLayer} opacity={hmOpacity} />
+                  mapImage={mapImage} canvasSize={compareSize} layerKey={heatmapLayer} opacity={hmOpacity} />
               </div>
             </div>
 
@@ -339,7 +356,7 @@ export default function MapView({
             ref={outerRef}
             className="relative shadow-2xl"
             style={{
-              width: CANVAS_BASE, height: CANVAS_BASE,
+              width: canvasSize, height: canvasSize,
               overflow: 'hidden',
               cursor: poiTool ? 'crosshair' : zoom > 1 ? 'grab' : 'default',
             }}
@@ -354,20 +371,20 @@ export default function MapView({
             }}
           >
             <div style={{
-              width: CANVAS_BASE, height: CANVAS_BASE,
+              width: canvasSize, height: canvasSize,
               transformOrigin: 'center center',
               transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
             }}>
               {mode === 'replay' ? (
                 <ReplayCanvas events={events} currentT={currentT} maxT={maxT}
-                  mapImage={mapImage} canvasSize={CANVAS_BASE} eventFilters={eventFilters} />
+                  mapImage={mapImage} canvasSize={canvasSize} eventFilters={eventFilters} />
               ) : (
-                <HeatmapCanvas heatmapData={heatmapData} mapImage={mapImage} canvasSize={CANVAS_BASE}
+                <HeatmapCanvas heatmapData={heatmapData} mapImage={mapImage} canvasSize={canvasSize}
                   layerKey={heatmapLayer} opacity={hmOpacity} showGrid={showGrid} hoveredCell={hoveredCell} />
               )}
 
               {mode === 'heatmap' && (
-                <POIOverlay canvasSize={CANVAS_BASE} zoom={zoom} pois={pois} setPois={setPois}
+                <POIOverlay canvasSize={canvasSize} zoom={zoom} pois={pois} setPois={setPois}
                   drawingShape={drawingShape} selectedPoiId={selectedPoiId}
                   setSelectedPoiId={setSelectedPoiId} allHeatmapsData={allHeatmapsData} />
               )}
@@ -376,7 +393,7 @@ export default function MapView({
             {/* Event tooltip */}
             {tooltip?.type === 'event' && (
               <div className="absolute z-20 bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs pointer-events-none shadow-lg"
-                style={{ left: tooltip.x + 12, top: Math.min(tooltip.y - 8, CANVAS_BASE - 80) }}>
+                style={{ left: tooltip.x + 12, top: Math.min(tooltip.y - 8, canvasSize - 80) }}>
                 <div className="font-semibold text-gray-200">{tooltip.evt.e}</div>
                 <div className="text-gray-400">{tooltip.evt.bot ? '🤖 Bot' : '👤 Human'}</div>
                 <div className="text-gray-500">t = {Math.round(tooltip.evt.t)}s</div>
@@ -387,7 +404,7 @@ export default function MapView({
             {/* Grid cell tooltip */}
             {tooltip?.type === 'grid' && (
               <div className="absolute z-20 bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs pointer-events-none shadow-lg"
-                style={{ left: Math.min(tooltip.x + 12, CANVAS_BASE - 130), top: Math.min(tooltip.y - 8, CANVAS_BASE - 110) }}>
+                style={{ left: Math.min(tooltip.x + 12, canvasSize - 130), top: Math.min(tooltip.y - 8, canvasSize - 110) }}>
                 <div className="font-semibold text-gray-300 mb-1">Cell [{tooltip.bx},{tooltip.by}]</div>
                 <div className="flex justify-between gap-4 text-gray-400"><span>Kills</span>   <span className="text-red-400    font-mono">{tooltip.metrics.kills}</span></div>
                 <div className="flex justify-between gap-4 text-gray-400"><span>Deaths</span>  <span className="text-orange-400 font-mono">{tooltip.metrics.deaths}</span></div>
@@ -402,7 +419,7 @@ export default function MapView({
         {/* POI metrics panel (outside zoom div) */}
         {mode === 'heatmap' && mapId && (
           <POIMetricsPanel pois={pois} setPois={setPois} selectedPoiId={selectedPoiId}
-            setSelectedPoiId={setSelectedPoiId} allHeatmapsData={allHeatmapsData} canvasSize={CANVAS_BASE} />
+            setSelectedPoiId={setSelectedPoiId} allHeatmapsData={allHeatmapsData} canvasSize={canvasSize} />
         )}
 
         {/* Player Counter */}

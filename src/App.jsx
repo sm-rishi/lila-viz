@@ -18,7 +18,8 @@ export default function App() {
   const [heatmapLayer, setHeatmapLayer] = useState('kills');
   const [eventFilters, setEventFilters] = useState(DEFAULT_FILTERS);
 
-  const [selectedId, setSelectedId] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedId,  setSelectedId]  = useState(null);
   const selectedMatch = useMemo(
     () => matches.find(m => m.match_id === selectedId) || null,
     [matches, selectedId]
@@ -83,10 +84,17 @@ export default function App() {
         <div className="text-xs text-gray-500">
           {loading ? 'Loading…' : `${matches.length} matches · Feb 10–14, 2026`}
         </div>
+        <button
+          onClick={() => setSidebarOpen(p => !p)}
+          className="text-gray-400 hover:text-gray-200 transition-colors p-1 rounded hover:bg-gray-800"
+          title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        >
+          {sidebarOpen ? '◀' : '▶'}
+        </button>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 flex-shrink-0 flex flex-col bg-gray-900 border-r border-gray-700 overflow-hidden">
+        <aside className={`flex-shrink-0 flex flex-col bg-gray-900 border-r border-gray-700 overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-64' : 'w-0 border-r-0'}`}>
           <Filters
             filterMap={filterMap}       setFilterMap={handleSetFilterMap}
             filterDay={filterDay}       setFilterDay={setFilterDay}
