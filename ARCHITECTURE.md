@@ -88,11 +88,14 @@ All 89,104 events fall within [0, 1] on both axes — no clipping needed. The fr
 | Replay playback | `requestAnimationFrame` loop; `speed` multiplier (0.5×–4×); seek via timeline scrubber |
 | Zoom / Pan | CSS `scale(zoom) translate(panX, panY)` on inner div; wheel zoom (1×–5×); drag-to-pan when zoomed; +/− buttons |
 | Player alive counter | `useMemo` over events up to `currentT`; tracks dead UIDs from Killed/BotKilled/KilledByStorm; counts BotKill events for bot deaths |
-| Storm overlay | Starts at 85% of match duration; direction inferred from KilledByStorm positions per match; drawn as radial gradient arc on canvas |
+| Storm overlay | Starts at 85% of match duration; safe zone modelled as shrinking circle (approx.); player dots ring green/amber/red for proximity; "⚠ approx." badge in UI |
 | Hover tooltip | Screen → canvas coord transform accounts for zoom + pan; nearest event within 16/zoom px |
 | Heatmap date filter | Fetches `{map}_{day}_{layer}.json`; switching day triggers a new fetch; "all days" fetches `{map}_{layer}.json` |
 | Filter heatmap by match | Paste/type a match ID → `useMatchHeatmap` bins that match's events client-side into the same grid format as server heatmaps |
 | Copy match ID | Hover-revealed button on each match row; `navigator.clipboard.writeText`; ✓ feedback for 1.5 s |
+| POI zones (Feature 1) | Circle/rect drawing tool in heatmap mode; zones stored in canvas coords; SVG overlay inside zoom div; `useAllHeatmaps` fetches all 5 layers in parallel to show per-zone kill/death/loot/traffic/storm counts |
+| Comparative heatmaps (Feature 2) | "Compare" mode renders two 400px canvases side-by-side with independent day selectors; Δ Diff toggle computes normalised (B−A) per cell; positive delta = red, negative = blue in `HeatmapCanvas` |
+| Grid metrics (Feature 4) | Grid toggle in heatmap mode draws 16-px cell lines on canvas; hover shows per-cell kills/deaths/loot/traffic/storm tooltip sourced from `useAllHeatmaps` |
 
 ## Design Decisions
 
@@ -133,7 +136,19 @@ Heatmap cells are drawn as Gaussian radial gradients rather than flat rectangles
 The color ramp goes black → purple → red → orange → yellow (viridis-adjacent), which is perceptually ordered and readable by people with red-green color blindness.
 
 ### Storm Visualization
-Storm direction is inferred per-match from the centroid of `KilledByStorm` positions: if most deaths are on the east side, the storm is coming from the east. The storm arc starts at 85% of match duration (validated from data: all 39 storm deaths occur in the final 15% of their respective matches) and grows to cover 70% of the map radius by match end. This matches the observed data rather than using a fixed game-rule assumption.
+Storm direction is inferred per-match from the centroid of `KilledByStorm` positions — if most deaths are on the east side, the storm is coming from the east. Onset is data-validated: all 39 storm deaths in the dataset occur in the final 15% of their match.
+
+**Shrinking safe-zone model (approximation — marked in UI as "Storm: approx."):**
+The actual safe-zone boundary coordinates are not present in the dataset; only death positions are recorded. The tool therefore models the safe zone as a shrinking circle using the following assumptions:
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Onset | 85% of match duration | Data-validated: all storm deaths in final 15% |
+| Initial radius | 45% of canvas | Covers most playable area at storm start |
+| Final radius | 6% of canvas | Near-zero safe zone at match end |
+| Centre drift | 15% of canvas toward opposite side of storm | Mimics typical BR shrink behaviour |
+
+Player dots are ringed **green** (safely inside), **amber** (within 15% of the boundary), or **red** (outside the safe zone) based on their distance to the modelled circle centre. A small **"⚠ Storm: approx."** badge is shown on the canvas to communicate that the safe-zone geometry is a model, not ground truth.
 
 ## Major Tradeoffs
 

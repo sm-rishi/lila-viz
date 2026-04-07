@@ -41,11 +41,11 @@ export default function App() {
 
   const handleSetFilterMap = v => {
     setFilterMap(v);
-    if (mode === 'heatmap') setSelectedId(null);
+    if (mode === 'heatmap' || mode === 'compare') setSelectedId(null);
   };
 
   const heatmapMapId = filterMap || selectedMatch?.map_id || 'AmbroseValley';
-  const heatmapMatch = mode === 'heatmap'
+  const heatmapMatch = (mode === 'heatmap' || mode === 'compare')
     ? { map_id: heatmapMapId, match_id: null, day: filterDay, n_humans: '—', n_bots: '—', duration_s: 0 }
     : null;
 
@@ -111,7 +111,7 @@ export default function App() {
             </div>
           )}
 
-          {mode === 'heatmap' && (
+          {(mode === 'heatmap' || mode === 'compare') && (
             <div className="flex-1 p-3 overflow-y-auto">
               {/* Current view context */}
               <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Viewing</div>
@@ -197,7 +197,7 @@ export default function App() {
 
         <main className="flex-1 overflow-hidden">
           <MapView
-            selectedMatch={mode === 'heatmap' ? heatmapMatch : selectedMatch}
+            selectedMatch={(mode === 'heatmap' || mode === 'compare') ? heatmapMatch : selectedMatch}
             mode={mode}
             eventFilters={eventFilters}
             heatmapLayer={heatmapLayer}

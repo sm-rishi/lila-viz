@@ -28,84 +28,92 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
     if (!events || events.length === 0) return;
 
     // ── Storm overlay ────────────────────────────────────────────────────────
-    // DATA INSIGHT: All 39 KilledByStorm events in the dataset occur at 99–100%
-    // of their match duration. The storm only becomes lethal in the final ~10–15%
-    // of a match. Storm direction varies per match (E:13, W:11, N:9, S:6 in data).
-    // We infer direction from the storm death position in THIS match; if no storm
-    // deaths exist, we use a deterministic direction from the match ID hash so it
-    // looks different per match rather than always defaulting to south.
+    // DATA INSIGHT: All 39 KilledByStorm events occur at 99–100% of their
+    // match duration, so the storm only becomes lethal in the final ~15%.
+    // Storm direction varies per match (E:13, W:11, N:9, S:6 in the dataset).
+    //
+    // ASSUMPTION (approximation — actual safe-zone boundary is not in the data):
+    //   • Safe zone is modelled as a shrinking circle centred near the map centre.
+    //   • At storm start (85% of match) radius = 45% of canvas.
+    //   • At match end (100%) radius = 6% of canvas.
+    //   • Centre drifts 15% of canvas toward the side opposite the storm direction
+    //     as the storm closes, mimicking typical BR shrink behaviour.
+    //   • Player dots are ringed green/amber/red to show safe-zone proximity.
     const stormDeaths = events.filter(e => e.e === 'KilledByStorm');
     let stormDirection = 'south';
 
     if (stormDeaths.length > 0) {
-      // Infer from actual death position — whichever edge it's closest to
       const avgPx = stormDeaths.reduce((s, e) => s + e.px, 0) / stormDeaths.length;
       const avgPy = stormDeaths.reduce((s, e) => s + e.py, 0) / stormDeaths.length;
       const dists = { north: avgPy, south: 1024 - avgPy, west: avgPx, east: 1024 - avgPx };
       stormDirection = Object.entries(dists).sort((a, b) => a[1] - b[1])[0][0];
     } else {
-      // No storm death in this match — pick a direction from the first uid char
-      // so different matches get different directions rather than all defaulting to south
       const uid = events[0]?.uid || '';
-      const code = uid.charCodeAt(0) || 0;
-      stormDirection = ['north', 'south', 'east', 'west'][code % 4];
+      stormDirection = ['north', 'south', 'east', 'west'][(uid.charCodeAt(0) || 0) % 4];
     }
 
-    // Storm sweeps in during the LAST 15% of the match (data-validated).
-    // Before that threshold, no storm is visible.
     const stormStart    = maxT * 0.85;
     const stormProgress = maxT > 0
       ? Math.max(0, Math.min(1, (currentT - stormStart) / (maxT - stormStart)))
       : 0;
 
+    // Safe zone geometry (in canvas px)
+    let safeZone = null;
     if (stormProgress > 0) {
-      // In 15% of remaining match time the storm can cross ~70% of the map
-      const coverage = stormProgress * size * 0.70;
+      const safeRadius = size * (0.45 - 0.39 * stormProgress); // 45% → 6%
+      const drift      = size * 0.15 * stormProgress;
+      let safeCx = size / 2;
+      let safeCy = size / 2;
+      if (stormDirection === 'east')  safeCx -= drift;
+      if (stormDirection === 'west')  safeCx += drift;
+      if (stormDirection === 'south') safeCy -= drift;
+      if (stormDirection === 'north') safeCy += drift;
+      safeZone = { cx: safeCx, cy: safeCy, r: safeRadius };
 
-      // Linear gradient from map edge inward
-      let gx0, gy0, gx1, gy1;
-      let bx0, by0, bx1, by1; // boundary line coords
-      if (stormDirection === 'south') {
-        gx0 = size / 2; gy0 = size;     gx1 = size / 2; gy1 = size - coverage;
-        bx0 = 0; by0 = size - coverage; bx1 = size; by1 = size - coverage;
-      } else if (stormDirection === 'north') {
-        gx0 = size / 2; gy0 = 0;        gx1 = size / 2; gy1 = coverage;
-        bx0 = 0; by0 = coverage;        bx1 = size; by1 = coverage;
-      } else if (stormDirection === 'west') {
-        gx0 = 0;        gy0 = size / 2; gx1 = coverage;        gy1 = size / 2;
-        bx0 = coverage; by0 = 0;        bx1 = coverage; by1 = size;
-      } else { // east
-        gx0 = size;             gy0 = size / 2; gx1 = size - coverage; gy1 = size / 2;
-        bx0 = size - coverage;  by0 = 0;        bx1 = size - coverage; by1 = size;
-      }
+      // Storm fog — purple outside safe circle, transparent inside
+      // Uses an offscreen canvas so the safe zone is cleanly cut out.
+      const off = document.createElement('canvas');
+      off.width  = size;
+      off.height = size;
+      const offCtx = off.getContext('2d');
 
-      // Purple storm fog
-      const grad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
-      grad.addColorStop(0,    `rgba(109, 40, 217, ${0.65 * stormProgress})`);
-      grad.addColorStop(0.55, `rgba(139, 92, 246, ${0.35 * stormProgress})`);
-      grad.addColorStop(1,    'rgba(139, 92, 246, 0)');
+      offCtx.fillStyle = `rgba(80, 15, 180, ${0.62 * stormProgress})`;
+      offCtx.fillRect(0, 0, size, size);
+
+      offCtx.globalCompositeOperation = 'destination-out';
+      // Soft inner edge: slightly smaller clear circle + gradient fade
+      const fadeR = safeRadius * 0.92;
+      offCtx.beginPath();
+      offCtx.arc(safeCx, safeCy, fadeR, 0, Math.PI * 2);
+      offCtx.fill();
+
+      // Add a soft edge transition
+      const edgeGrad = offCtx.createRadialGradient(safeCx, safeCy, fadeR, safeCx, safeCy, safeRadius * 1.05);
+      edgeGrad.addColorStop(0, 'rgba(0,0,0,1)');
+      edgeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      offCtx.fillStyle = edgeGrad;
+      offCtx.beginPath();
+      offCtx.arc(safeCx, safeCy, safeRadius * 1.05, 0, Math.PI * 2);
+      offCtx.fill();
+
+      ctx.drawImage(off, 0, 0);
+
+      // Safe-zone boundary ring
       ctx.save();
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, size, size);
-      ctx.restore();
-
-      // Dashed boundary line
-      ctx.save();
-      ctx.strokeStyle = `rgba(196, 181, 253, ${0.7 + stormProgress * 0.3})`;
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = `rgba(196, 181, 253, ${0.65 + stormProgress * 0.35})`;
+      ctx.lineWidth   = 2.5;
       ctx.setLineDash([10, 5]);
-      ctx.shadowColor = 'rgba(167, 139, 250, 0.8)';
-      ctx.shadowBlur  = 6;
+      ctx.shadowColor = 'rgba(167, 139, 250, 0.85)';
+      ctx.shadowBlur  = 7;
       ctx.beginPath();
-      ctx.moveTo(bx0, by0);
-      ctx.lineTo(bx1, by1);
+      ctx.arc(safeCx, safeCy, safeRadius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
     // ── End storm ────────────────────────────────────────────────────────────
 
     const allowed = allowedEvents();
-    const visible = events.filter(e => e.t <= currentT && allowed.has(e.e));
+    const visible  = events.filter(e => e.t <= currentT && allowed.has(e.e));
 
     const humanPaths = {};
     const botPaths   = {};
@@ -119,7 +127,7 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
       }
     });
 
-    const humanColors = ['#60a5fa','#34d399','#fbbf24','#f472b6','#a78bfa','#38bdf8','#fb923c'];
+    const humanColors   = ['#60a5fa','#34d399','#fbbf24','#f472b6','#a78bfa','#38bdf8','#fb923c'];
     const humanColorMap = {};
     let colorIdx = 0;
 
@@ -128,7 +136,7 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
       ctx.save();
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 1;
+      ctx.lineWidth   = 1;
       ctx.globalAlpha = 0.5;
       Object.values(botPaths).forEach(path => {
         if (path.length < 2) return;
@@ -142,11 +150,11 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
       ctx.restore();
     }
 
-    // Human paths — solid, colored per player
+    // Human paths — solid, per-player colour
     if (eventFilters.showHumanPaths) {
       ctx.save();
       ctx.setLineDash([]);
-      ctx.lineWidth = 2;
+      ctx.lineWidth   = 2;
       ctx.globalAlpha = 0.85;
       Object.entries(humanPaths).forEach(([uid, path]) => {
         if (path.length < 2) return;
@@ -163,8 +171,8 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
         ctx.stroke();
 
         // Head dot at current position
-        const last = path[path.length - 1];
-        const [lpx, lpy] = scalePixel(last.px, last.py, size);
+        const last        = path[path.length - 1];
+        const [lpx, lpy]  = scalePixel(last.px, last.py, size);
         ctx.fillStyle = humanColorMap[uid];
         ctx.beginPath();
         ctx.arc(lpx, lpy, 4, 0, Math.PI * 2);
@@ -173,6 +181,33 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
       ctx.restore();
     }
 
+    // ── Storm proximity ring around each human player ──────────────────────
+    // Green = safely inside, Amber = within 15% of radius to boundary, Red = outside
+    if (safeZone && stormProgress > 0) {
+      const { cx: scx, cy: scy, r: sr } = safeZone;
+      Object.entries(humanPaths).forEach(([uid, path]) => {
+        const last       = path[path.length - 1];
+        const [lpx, lpy] = scalePixel(last.px, last.py, size);
+        const dist       = Math.hypot(lpx - scx, lpy - scy);
+        const margin     = sr * 0.15;
+
+        let ringColor;
+        if (dist <= sr - margin)  ringColor = '#22c55e'; // safe
+        else if (dist <= sr)      ringColor = '#f59e0b'; // near boundary
+        else                      ringColor = '#ef4444'; // outside
+
+        ctx.save();
+        ctx.strokeStyle = ringColor;
+        ctx.lineWidth   = 2;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(lpx, lpy, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+    // ── End storm proximity ────────────────────────────────────────────────
+
     // Event markers
     const markerEvents = visible.filter(e => e.e !== 'Position' && e.e !== 'BotPosition');
     markerEvents.forEach(evt => {
@@ -180,28 +215,23 @@ export default function ReplayCanvas({ events, currentT, maxT, mapImage, canvasS
       if (!cfg) return;
 
       const [px, py] = scalePixel(evt.px, evt.py, size);
-      const isStorm = evt.e === 'KilledByStorm';
+      const isStorm  = evt.e === 'KilledByStorm';
 
-      // Glow — larger and brighter for storm deaths
       ctx.save();
       ctx.globalAlpha = isStorm ? 0.5 : 0.25;
-      ctx.fillStyle = cfg.color;
-      if (isStorm) {
-        ctx.shadowColor = cfg.color;
-        ctx.shadowBlur  = 12;
-      }
+      ctx.fillStyle   = cfg.color;
+      if (isStorm) { ctx.shadowColor = cfg.color; ctx.shadowBlur = 12; }
       ctx.beginPath();
       ctx.arc(px, py, cfg.markerSize * (isStorm ? 2 : 1.4), 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
 
-      // Symbol
       ctx.save();
-      ctx.font = `${cfg.markerSize + (isStorm ? 8 : 4)}px serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = cfg.color;
-      ctx.globalAlpha = 0.95;
+      ctx.font          = `${cfg.markerSize + (isStorm ? 8 : 4)}px serif`;
+      ctx.textAlign     = 'center';
+      ctx.textBaseline  = 'middle';
+      ctx.fillStyle     = cfg.color;
+      ctx.globalAlpha   = 0.95;
       if (isStorm) { ctx.shadowColor = cfg.color; ctx.shadowBlur = 8; }
       ctx.fillText(cfg.symbol, px, py);
       ctx.restore();

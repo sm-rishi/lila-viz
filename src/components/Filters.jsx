@@ -24,17 +24,21 @@ export default function Filters({
       <div>
         <label className="text-xs text-gray-400 font-semibold uppercase tracking-wide block mb-1.5">View Mode</label>
         <div className="flex rounded overflow-hidden border border-gray-600">
-          {['replay', 'heatmap'].map(m => (
+          {[
+            { key: 'replay',   label: '▶ Replay'  },
+            { key: 'heatmap',  label: '🌡 Heatmap' },
+            { key: 'compare',  label: '⇌ Compare'  },
+          ].map(({ key, label }) => (
             <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 py-1.5 text-xs font-medium capitalize transition-colors ${
-                mode === m
+              key={key}
+              onClick={() => setMode(key)}
+              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                mode === key
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               }`}
             >
-              {m === 'replay' ? '▶ Replay' : '🌡 Heatmap'}
+              {label}
             </button>
           ))}
         </div>
